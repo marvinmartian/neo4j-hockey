@@ -1,0 +1,5 @@
+node_modules
+go
+games/*
+neo4j/*
+nginx/cache/*
