@@ -8,33 +8,37 @@ const user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 const driver = neo4j.driver("bolt://localhost:7687", neo4j.auth.basic("neo4j", "test"))
 // const session = driver.session()
 
+async function getScheduleRange(startDate,endDate) { 
+    let url = `http://localhost/api/v1/schedule?startDate=${startDate}&endDate=${endDate}&gameType=R`;
+    console.log(url)
+
+        let response = await axios({
+        url: url,
+        headers: { 'User-Agent': user_agent }
+    });
+
+    return response.data.dates;
+}
+
 async function getSchedule(gameDate) {
-    let url = `http://localhost/api/v1/schedule?date=${gameDate}`;
-    // let url = `http://localhost/api/v1/schedule?startDate=2022-10-07&endDate=${gameDate}`;
+
+    console.log(`Processing Single Date: ${gameDate}`);
+    let url = `http://localhost/api/v1/schedule?date=${gameDate}&gameType=R`;
+    // let url = `http://localhost/api/v1/schedule?date=${gameDate}&teamId=52&gameType=R`;
+    // let url = `http://localhost/api/v1/schedule?startDate=2022-10-07&endDate=${gameDate}&gameType=R`;
 
     let response = await axios({
         url: url,
         headers: { 'User-Agent': user_agent }
     });
 
-    // console.log(response.data.dates[0].games[0]);
-    // if ( response.data.dates && response.data.dates[0] && response.data.dates[0].games ) { 
-    return response.data.dates
-    // }
-    // else { 
-    //     return undefined
-    // }
-
+    return response.data.dates;
 }
 
 async function addGame(gameData) {
-    // console.log(gameData)
-    // console.log(gameData.venue.id)
-    // if ( gameData.venue.id == undefined ) { 
-    //     console.log(gameData)
-    // }
-    // process.exit()
-    // return true;
+
+    console.log(`Processing Game: ${gameData.gamePk} - ${gameData.teams.home.team.name} vs ${gameData.teams.away.team.name}`);
+
     let session = driver.session()
     try {
         const result = await session.run(
@@ -59,7 +63,6 @@ async function addGame(gameData) {
         const singleRecord = result.records[0]
         const node = singleRecord.get(0)
 
-        // console.log(node.properties.name)
     }
     catch (e) {
         console.error(e)
@@ -117,70 +120,133 @@ async function addOfficials(gameId, officials) {
     await session.close()
 }
 
-async function addEvents(gameData) {
-    console.log(gameData.gamePk)
-    // console.log(gameData.liveData)
-    // console.log(gameData.gameData.players)
-    // if ( gameData.venue.id == undefined ) { 
-    //     console.log(gameData)
-    // }
-    // process.exit()
-    // return true;
+async function addSingleGoal(eventData,gameData) { 
     let session = driver.session()
-
-
-    // If Jets (#52)
-    if (gameData.gameData.teams.away.id == 52 || gameData.gameData.teams.home.id == 52) {
-        // console.log("Jets")
-
-        // Referee and Linesman
-        // await addOfficials(gameData.gamePk, gameData.liveData.boxscore.officials);
-    }
     /*
-    for (const playerId of Object.keys(gameData.gameData.players)) {
-        // console.log(playerId)
-        if ( gameData.gameData.players[playerId].currentTeam ) { 
-            
-            const result = await session.run(
-                `MERGE (p:Player {id: $id, fullName: $fullName, primaryNumber: $primaryNumber, birthDate: $birthDate, height: $height, weight: $weight, position: $primaryPosition.code}) 
-              ON CREATE 
-                SET p.created = timestamp() 
-              ON MATCH 
-                SET p.lastSeen = timestamp() 
-                MERGE (t:Team {name: $currentTeam.name})
-                // MATCH (g:Game)
-                MERGE (c:Country {name: $nationality})
-                MERGE (p)-[rn:NATIONALITY]->(c)
-                MERGE (p)-[rt:PLAYS_FOR]->(t)
-              RETURN p`,
-                gameData.gameData.players[playerId]
-            )
-        } else { 
-            console.log(`Unable to process the following player: ${gameData.gameData.players[playerId].fullName} ${gameData.gameData.players[playerId].link}`)
-        }
-        
+    console.log(eventData)
+    var playerScorer = eventData.players[0].player;
+    // console.log(`eventType: ${playerScorer.fullName}`)
+    var playerMergeString = ``;
+    for (const k in eventData.players) {
+        let player = eventData.players[k]
+        // console.log(player);
+        // console.log(`Player: ${player.player.fullName}`)
+        playerMergeString = `${playerMergeString} MERGE (player${k}:Player {fullname: ${player.player.fullName}})`
+        console.log(playerMergeString);
+
     }
     */
+    console.log(gameData.gamePk, eventData.about.eventId)
+    await session.run(
+        `MATCH
+            (game:Game)
+        WHERE game.pk = $pk
+        MERGE (event:Event {id: $about.eventId, game: $pk})
+        RETURN event`,
+        {
+            result: eventData.result,
+            about: eventData.about,
+            pk: gameData.gamePk
+        }
+    )
+
     await session.close()
+    process.exit()
+}
+
+async function addSingleShot(eventData,gameData) { 
+    let session = driver.session()
+
+    // console.log(eventData.players[0].player.fullName)
+    // process.exit()
+    // console.log(gameData.gamePk, eventData.about.eventId)
+    await session.run(
+        `MATCH
+            (game:Game)
+        WHERE game.pk = $pk
+        MERGE (event:Shot {id: $about.eventId, name: 'Shot', game: $pk})
+        MERGE (team:Team {name: $team.name})
+        MERGE (player:Player {fullName: $players[0].player.fullName})
+        MERGE (event)-[r:HAPPENED_IN]->(game)
+        MERGE (event)-[rt:BY_TEAM]->(team)
+        MERGE (event)-[rp:BY_PLAYER]->(player)
+        RETURN event`,
+        {
+            result: eventData.result,
+            about: eventData.about,
+            team: eventData.team,
+            players: eventData.players,
+            pk: gameData.gamePk
+        }
+    )
+
+    await session.close()
+    // process.exit()
+}
+
+async function addEvents(gameData) {
+    // console.log(gameData.gamePk)
+    for (const playEvent of gameData.liveData.plays.allPlays) {
+        // console.log(playEvent)
+        switch (playEvent.result.event) {
+            case "Goal":
+                // console.log("Goal")
+                // await addSingleGoal(playEvent,gameData)
+                break;
+            case "Shot":
+                // console.log("Shot")
+                await addSingleShot(playEvent,gameData);
+                break;
+            case "Hit":
+                // console.log("Hit")
+                break;
+            case "Faceoff":
+                // console.log("Faceoff")
+                break;
+            default:
+                // console.log(playEvent)
+                break;
+        }
+
+        // process.exit()
+    }
+    // process.exit()
+    // return true;
+    // let session = driver.session()
+
+    // await session.close()
 }
 
 async function addScoringEvents(gameData) {
-    console.log(gameData.gamePk)
+    // console.log(gameData.gamePk)
     // console.log(gameData.liveData)
     let session = driver.session()
+    
 
-    // console.log(gameData.liveData.plays.scoringPlays)
+
+    
     for (const scoringId of gameData.liveData.plays.scoringPlays) {
-        // console.log(gameData.liveData.plays.allPlays[scoringId]);
+        // console.log(gameData.liveData.plays.allPlays[scoringId].team)
+        // process.exit()
+        // console.log(gameData.liveData.plays.allPlays[scoringId].about.eventId, gameData.liveData.plays.allPlays[scoringId].players[0].player.fullName);
+        // process.exit()
         gameData.liveData.plays.allPlays[scoringId].result.emptyNet = gameData.liveData.plays.allPlays[scoringId].result.emptyNet ? gameData.liveData.plays.allPlays[scoringId].result.emptyNet : false
+        // var scoredBy = 
+        /* 
+            MERGE (sp:Player {fullName: $scoredBy})
+            MERGE (gp:Player {fullName: $scoredAgainst})
+
+            MERGE (event)-[rt:SCORED_BY]->(sp)
+            MERGE (event)-[ra:SCORED_AGAINST]->(gp)
+        */
         const result = await session.run(
             `MATCH
                 (game:Game)
             WHERE game.pk = $pk
-            MERGE (event:Event {event: $result.event, gameWinningGoal: $result.gameWinningGoal, emptyNet: $result.emptyNet, time: $about.dateTime, period: $about.period})
+            MERGE (event:Event {id: $about.eventId, game: $pk, name: $result.event, gameWinningGoal: $result.gameWinningGoal, emptyNet: $result.emptyNet, time: $about.dateTime, period: $about.period})
             MERGE (team:Team {name: $team.name})
             MERGE (event)-[r:HAPPENED_IN]->(game)
-            MERGE (event)-[rt:SCORED_BY]->(team)
+            MERGE (event)-[rt:SCORED_BY_TEAM]->(team)
             RETURN type(r)`,
             {
                 result: gameData.liveData.plays.allPlays[scoringId].result,
@@ -189,36 +255,73 @@ async function addScoringEvents(gameData) {
                 pk: gameData.gamePk
             }
         )
+        for (const player of gameData.liveData.plays.allPlays[scoringId].players) {
+            // console.log(player)
+            switch (player.playerType) {
+                case "Scorer":
+                    var scoredBy = player.player.fullName
+                    await session.run(
+                        `MATCH
+                            (game:Game)
+                        WHERE game.pk = $pk
+                        MERGE (event:Event {id: $about.eventId, game: $pk})
+                        MERGE (player:Player {fullName: $player.player.fullName})
+                        MERGE (event)-[rt:SCORED_BY {Game: $pk}]->(player)
+                        RETURN player`,
+                        {
+                            result: gameData.liveData.plays.allPlays[scoringId].result,
+                            about: gameData.liveData.plays.allPlays[scoringId].about,
+                            player: player,
+                            pk: gameData.gamePk
+                        }
+                    )
+                    break;
+                case "Goalie":
+                    var scoredAgainst = player.player.fullName
+                    await session.run(
+                        `MATCH
+                            (game:Game)
+                        WHERE game.pk = $pk
+                        MERGE (event:Event {id: $about.eventId, game: $pk})
+                        MERGE (player:Player {fullName: $player.player.fullName})
+                        MERGE (event)-[rt:SCORED_ON]->(player)
+                        RETURN player`,
+                        {
+                            result: gameData.liveData.plays.allPlays[scoringId].result,
+                            about: gameData.liveData.plays.allPlays[scoringId].about,
+                            player: player,
+                            pk: gameData.gamePk
+                        }
+                    )
+                    break;
+                case "Assist":
+                    // console.log(player)
+                    // if ( player.player.fullName == 'Kyle Connor') {
+                    //     console.log(`Kyle Connor - Assist - Game ${gameData.gamePk} - event - ${gameData.liveData.plays.allPlays[scoringId].about.eventId}`)
+                    // }
+                    await session.run(
+                        `MATCH
+                            (game:Game)
+                        WHERE game.pk = $pk
+                        MERGE (event:Event {id: $about.eventId, game: $pk})
+                        MERGE (player:Player {fullName: $player.player.fullName})
+                        MERGE (event)-[rt:ASSISTED_BY {Game: $pk}]->(player)
+                        RETURN player`,
+                        {
+                            result: gameData.liveData.plays.allPlays[scoringId].result,
+                            about: gameData.liveData.plays.allPlays[scoringId].about,
+                            player: player,
+                            pk: gameData.gamePk
+                        }
+                    )
+                    break;
+                default:
+                    break;
+            }
+        }
+        // process.exit()
     }
     // process.exit()
-    /*
-    for (const playerId of Object.keys(gameData.gameData.players)) {
-        // console.log(playerId)
-        if ( gameData.gameData.players[playerId].currentTeam ) { 
-            
-            const result = await session.run(
-                `MERGE (p:Player {id: $id, fullName: $fullName, primaryNumber: $primaryNumber, birthDate: $birthDate, height: $height, weight: $weight, position: $primaryPosition.code}) 
-              ON CREATE 
-                SET p.created = timestamp() 
-              ON MATCH 
-                SET p.lastSeen = timestamp() 
-                MERGE (t:Team {name: $currentTeam.name})
-                // MATCH (g:Game)
-                MERGE (c:Country {name: $nationality})
-                MERGE (p)-[rn:NATIONALITY]->(c)
-                MERGE (p)-[rt:PLAYS_FOR]->(t)
-              RETURN p`,
-                gameData.gameData.players[playerId]
-            )
-        } else { 
-            console.log(`Unable to process the following player: ${gameData.gameData.players[playerId].fullName} ${gameData.gameData.players[playerId].link}`)
-        }
-        
-        // process.exit()
-
-        // process.exit()
-    }
-    */
     await session.close()
 }
 
@@ -226,9 +329,14 @@ async function addPlayers(gameData) {
     // console.log(gameData.gamePk)
     // console.log(gameData.liveData)
     let session = driver.session()
+    var homeTeam = gameData.gameData.teams.home;
+    // console.log(homeTeam.triCode)
+    // process.exit()
 
     for (const playerId of Object.keys(gameData.gameData.players)) {
         // console.log(gameData.gameData.players[playerId])
+        // console.log(playerId)
+        // console.log(gameData.liveData.boxscore.teams.away.players[playerId])
         // process.exit()
         if ( !gameData.gameData.players[playerId].nationality ) { 
             gameData.gameData.players[playerId].nationality = gameData.gameData.players[playerId].birthCountry
@@ -243,6 +351,24 @@ async function addPlayers(gameData) {
         
         if ( gameData.gameData.players[playerId].currentTeam ) { 
             
+            if ( gameData.gameData.players[playerId].currentTeam.triCode == gameData.gameData.teams.home.triCode ) {
+                // Home team
+                var playerTeam = "home"
+            } else { 
+                // Away team
+                var playerTeam = "away"
+            }
+            // console.log(gameData.liveData.boxscore.teams[playerTeam].players[playerId])
+            if ( gameData.liveData.boxscore.teams[playerTeam].players[playerId] ) { 
+                var playerStats = gameData.liveData.boxscore.teams[playerTeam].players[playerId].stats
+                // console.log(playerStats)
+            } else { 
+                console.log(`Unable to process stats for player: ${playerId} - ${gameData.gameData.players[playerId].fullName}`)
+            }
+            
+            // process.exit()
+            
+
             try {
                 const result = await session.run(
                     `MERGE (p:Player {id: $player.id, fullName: $player.fullName, birthDate: $player.birthDate, height: $player.height, weight: $player.weight, position: $player.primaryPosition.code}) 
@@ -280,15 +406,12 @@ async function addPlayers(gameData) {
     await session.close()
 }
 
-async function getGameEvents(gameId) {
+async function getGameEvents(gameLink) {
     let response = await axios({
-        url: `http://localhost/api/v1/game/${gameId}/feed/live`,
+        url: `http://localhost${gameLink}`,
         headers: { 'User-Agent': user_agent }
     });
 
-    // console.log(response.data.liveData.boxscore.officials);
-    // console.log(`http://localhost/api/v1/game/${gameId}/feed/live`);
-    // process.exit();
     return response.data;
 
 }
@@ -327,43 +450,29 @@ function join(t, a, s) {
 
 (async () => {
     let a = [{ year: 'numeric' }, { month: 'numeric' }, { day: 'numeric' }];
-    // console.log(new Date(2022, 9, 7))
-    for (var d = new Date(2022, 9, 7); d <= Date.now(); d.setDate(d.getDate() + 1)) {
-        // console.log(new Date(d))
-        // var leDate = new Date()
-        var leDate = d;
-        // leDate.setDate(leDate.getDate() - 13)
-        let s = join(leDate, a, '-');
-        // console.log(s);
-        // process.exit()
-
-        var gameSchedule = await getSchedule(s);
-        // console.log(gameSchedule)
-        for (const gameDay of gameSchedule) {
-            // console.log(gameDay)
-            if (gameDay.games) {
-                for (const game of gameDay.games) {
-                    // if ( game.status.abstractGameState == 'Final') {
-                    //     console.log(game)
-                    //     process.exit()
-                    // }
-
-                    if (game !== undefined && game.status.abstractGameState == 'Final') {
-                        let gameFeed = await getGameEvents(game.gamePk)
-                        await addGame(game)
-                        await addOfficials(game.gamePk,gameFeed.liveData.boxscore.officials);
-                        await addPlayers(gameFeed)
-                        // await addEvents(gameFeed)
-                        await addScoringEvents(gameFeed)
-                    }
+    // var startDate = new Date(2022, 9, 7) // start of nhl season
+    var startDate = new Date(2023, 0, 2) // start of nhl season
+    var endDate = new Date(); // Now
+    endDate.setDate(endDate.getDate() - 1)
+    startDate = join(startDate, a, '-');
+    endDate = join(endDate, a, '-');
+    var gamesSchedule = await getScheduleRange(startDate,endDate);
+    for (const gameDay of gamesSchedule) {
+        if (gameDay.games) {
+            for (const game of gameDay.games) {
+                if (game !== undefined && game.status.abstractGameState == 'Final') {
+                    let gameFeed = await getGameEvents(game.link)
+                    await addGame(game)
+                    await addOfficials(game.gamePk,gameFeed.liveData.boxscore.officials);
+                    await addPlayers(gameFeed)
+                    await addEvents(gameFeed)
+                    await addScoringEvents(gameFeed)
                 }
             }
-
         }
 
     }
-
-
+    
     // on application exit:
     await driver.close()
     // console.log("foo")
