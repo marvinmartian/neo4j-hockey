@@ -154,17 +154,19 @@ async function addSingleGoal(eventData,gameData) {
     process.exit()
 }
 
-async function addSingleShot(eventData,gameData) { 
+async function addSingleEvent(eventData,gameData) { 
     let session = driver.session()
 
     // console.log(eventData.players[0].player.fullName)
-    // process.exit()
+    
     // console.log(gameData.gamePk, eventData.about.eventId)
+    // console.log(eventData.result.event)
+    // process.exit()
     await session.run(
         `MATCH
             (game:Game)
         WHERE game.pk = $pk
-        MERGE (event:Shot {id: $about.eventId, name: 'Shot', game: $pk})
+        MERGE (event:Event {id: $about.eventId, name: $result.event, game: $pk})
         MERGE (team:Team {name: $team.name})
         MERGE (player:Player {fullName: $players[0].player.fullName})
         MERGE (event)-[r:HAPPENED_IN]->(game)
@@ -195,16 +197,36 @@ async function addEvents(gameData) {
                 break;
             case "Shot":
                 // console.log("Shot")
-                await addSingleShot(playEvent,gameData);
+                await addSingleEvent(playEvent,gameData);
+                break;
+            case "Missed Shot":
+                // console.log("Missed Shot")
+                await addSingleEvent(playEvent,gameData);
+                break;
+            case "Blocked Shot":
+                // console.log("Missed Shot")
+                // console.log(playEvent.players)
+                // process.exit()
+                await addSingleEvent(playEvent,gameData);
+                break;
+            case "Giveaway":
+                // console.log("Missed Shot")
+                await addSingleEvent(playEvent,gameData);
+                break;
+            case "Penalty":
+                // console.log("Hit")
+                await addSingleEvent(playEvent,gameData);
                 break;
             case "Hit":
                 // console.log("Hit")
+                await addSingleEvent(playEvent,gameData);
                 break;
             case "Faceoff":
                 // console.log("Faceoff")
                 break;
             default:
-                // console.log(playEvent)
+                // console.log(playEvent.result.event)
+                // await addSingleEvent(playEvent,gameData);
                 break;
         }
 
@@ -451,9 +473,9 @@ function join(t, a, s) {
 (async () => {
     let a = [{ year: 'numeric' }, { month: 'numeric' }, { day: 'numeric' }];
     // var startDate = new Date(2022, 9, 7) // start of nhl season
-    var startDate = new Date(2023, 0, 2) // start of nhl season
+    var startDate = new Date(2023, 0, 7) // start of nhl season
     var endDate = new Date(); // Now
-    endDate.setDate(endDate.getDate() - 1)
+    endDate.setDate(endDate.getDate() )
     startDate = join(startDate, a, '-');
     endDate = join(endDate, a, '-');
     var gamesSchedule = await getScheduleRange(startDate,endDate);
