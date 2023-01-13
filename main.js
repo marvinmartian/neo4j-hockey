@@ -17,7 +17,10 @@ async function getScheduleRange(startDate, endDate) {
         headers: { 'User-Agent': user_agent }
     });
 
-    return response.data.dates;
+    return {
+        dates: response.data.dates,
+        wait: response.data.wait
+    };
 }
 
 async function getSchedule(gameDate) {
@@ -305,22 +308,21 @@ async function addPlayers(gameData) {
             gameData.gameData.players[playerId].height = 0
         }
 
+        let playerStats;
+        let currentTeam;
+        if ( gameData.liveData.boxscore.teams.home.players[playerId] ) { 
+            playerStats = gameData.liveData.boxscore.teams.home.players[playerId].stats;
+            currentTeam = gameData.gameData.teams.home
+        } else { 
+            playerStats = gameData.liveData.boxscore.teams.away.players[playerId].stats;
+            currentTeam = gameData.gameData.teams.away
+        }
+
+        if (!gameData.gameData.players[playerId].currentTeam ) { 
+            gameData.gameData.players[playerId].currentTeam = currentTeam;
+        } 
+
         if (gameData.gameData.players[playerId].currentTeam) {
-
-            if (gameData.gameData.players[playerId].currentTeam.triCode == gameData.gameData.teams.home.triCode) {
-                // Home team
-                var playerTeam = "home"
-            } else {
-                // Away team
-                var playerTeam = "away"
-            }
-
-            if (gameData.liveData.boxscore.teams[playerTeam].players[playerId]) {
-                var playerStats = gameData.liveData.boxscore.teams[playerTeam].players[playerId].stats
-            } else {
-                console.log(`Unable to process stats for player: ${playerId} - ${gameData.gameData.players[playerId].fullName}`)
-            }
-
             try {
                 const result = await session.run(
                     `MERGE (p:Player {id: $player.id, fullName: $player.fullName, birthDate: $player.birthDate, height: $player.height, weight: $player.weight, position: $player.primaryPosition.code}) 
@@ -396,27 +398,34 @@ function join(t, a, s) {
     return a.map(format).join(s);
 }
 
+var delay = (time) => {
+    // console.log(time)
+    return new Promise(res => {
+        setTimeout(res, time)
+    })
+}
 
 (async () => {
     let a = [{ year: 'numeric' }, { month: 'numeric' }, { day: 'numeric' }];
-    // var startDate = new Date(2022, 9, 7) // start of nhl season
-    var startDate = new Date(2023, 0, 7) // start of nhl season
+    var startDate = new Date(2022, 10, 20) // start of nhl season
+    // var startDate = new Date(2023, 0, 7) // start of nhl season
     var endDate = new Date(); // Now
     endDate.setDate(endDate.getDate())
     startDate = join(startDate, a, '-');
     endDate = join(endDate, a, '-');
     var gamesSchedule = await getScheduleRange(startDate, endDate);
-    for (const gameDay of gamesSchedule) {
+    for (const gameDay of gamesSchedule.dates) {
         if (gameDay.games) {
             for (const game of gameDay.games) {
                 if (game !== undefined && game.status.abstractGameState == 'Final') {
                     let gameFeed = await getGameEvents(game.link)
                     await addGame(game)
-                    await addVenue(gameFeed.gameData.venue,game.gamePk)
+                    await addVenue(gameFeed.gameData.venue, game.gamePk)
                     await addOfficials(game.gamePk, gameFeed.liveData.boxscore.officials);
                     await addPlayers(gameFeed)
                     await addEvents(gameFeed)
                     await addScoringEvents(gameFeed)
+                    await delay(gamesSchedule.wait * 1)
                 }
             }
         }
