@@ -40,26 +40,59 @@ async function getSchedule(gameDate) {
 
 async function addGame(gameData) {
 
-    console.log(`Processing Game: ${gameData.gamePk} - ${gameData.teams.home.team.name} vs ${gameData.teams.away.team.name}`);
+    console.log(`Processing Game: ${gameData.gamePk} - ${gameData.gameData.teams.home.name} vs ${gameData.gameData.teams.away.name}`);
+    // console.log(gameData.liveData.linescore.hasShootout)
+    let overtime = false;
+    // process.exit()
+    if ( gameData.liveData.linescore.currentPeriod == 4 ) { 
+        overtime = true;
+        // console.log(gameData.liveData.linescore.hasShootout);
+    }
+    
 
     let session = driver.session()
     try {
         const result = await session.run(
-            `MERGE (g:Game {pk: $pk, season: $season, gameDate: $gameDate, away_team: $away_team, home_team: $home_team, away_score: $away_score, home_score: $home_score  }) 
+            `MERGE (g:Game {pk: $pk, 
+                    season: $season, 
+                    gameDate: $gameDate, 
+                    overtime: $overtime,
+                    shootout: $shootout,
+                    away_team: $away.name, 
+                    home_team: $home.name, 
+                    away_score: $away.stats.goals, 
+                    home_score: $home.stats.goals,
+                    away_pim: $away.stats.pim, 
+                    home_pim: $home.stats.pim,
+                    away_shots: $away.stats.shots, 
+                    home_shots: $home.stats.shots
+                }) 
           ON CREATE 
             SET g.created = timestamp() 
           ON MATCH 
             SET g.lastSeen = timestamp() 
             MERGE (v:Venue {name: $venue})
-            MERGE (ht:Team {name: $home_team})
-            MERGE (vt:Team {name: $away_team})
+            MERGE (ht:Team {name: $home.name})
+            MERGE (vt:Team {name: $away.name})
             MERGE (g)-[r:PLAYED_AT]->(v)
             MERGE (g)-[rat:AWAY_TEAM]->(vt)
             MERGE (g)-[rht:HOME_TEAM]->(ht)
           RETURN g`,
             {
-                pk: gameData.gamePk, season: gameData.season, gameDate: gameData.gameDate, away_team: gameData.teams.away.team.name, home_team: gameData.teams.home.team.name, away_score: gameData.teams.away.score, home_score: gameData.teams.home.score,
-                venue: gameData.venue.name
+                pk: gameData.gamePk, 
+                season: gameData.gameData.game.season, 
+                gameDate: gameData.gameData.datetime.dateTime, 
+                overtime: overtime,
+                shootout: gameData.liveData.linescore.hasShootout,
+                away: {
+                    name: gameData.gameData.teams.away.name,
+                    stats: gameData.liveData.boxscore.teams.away.teamStats.teamSkaterStats
+                },
+                home: {
+                    name: gameData.gameData.teams.home.name,
+                    stats: gameData.liveData.boxscore.teams.home.teamStats.teamSkaterStats
+                },
+                venue: gameData.gameData.venue.name
             }
         )
 
@@ -123,13 +156,13 @@ async function addSingleEvent(eventData, gameData) {
     // console.log(eventData.players[0].player.fullName)
 
     // console.log(gameData.gamePk, eventData.about.eventId)
-    // console.log(eventData.result.event)
+    // console.log(eventData.result.eventTypeId)
     // process.exit()
     await session.run(
         `MATCH
             (game:Game)
         WHERE game.pk = $pk
-        MERGE (event:Event {id: $about.eventId, name: $result.event, game: $pk})
+        MERGE (event:${eventData.result.eventTypeId} {id: $about.eventId, name: $result.event, game: $pk})
         MERGE (team:Team {name: $team.name})
         MERGE (player:Player {fullName: $players[0].player.fullName})
         MERGE (event)-[r:HAPPENED_IN]->(game)
@@ -186,6 +219,11 @@ async function addEvents(gameData) {
                 break;
             case "Faceoff":
                 // console.log("Faceoff")
+                await addSingleEvent(playEvent, gameData);
+                break;
+            case "Takeaway":
+                // console.log("Faceoff")
+                await addSingleEvent(playEvent, gameData);
                 break;
             default:
                 // console.log(playEvent.result.event)
@@ -407,7 +445,9 @@ var delay = (time) => {
 
 (async () => {
     let a = [{ year: 'numeric' }, { month: 'numeric' }, { day: 'numeric' }];
-    var startDate = new Date(2022, 10, 20) // start of nhl season
+    // var startDate = new Date(2023, 0, 12) // start of nhl season
+    var startDate = new Date(Date.parse("Jan 17, 2023"));
+    // process.exit()
     // var startDate = new Date(2023, 0, 7) // start of nhl season
     var endDate = new Date(); // Now
     endDate.setDate(endDate.getDate())
@@ -419,13 +459,13 @@ var delay = (time) => {
             for (const game of gameDay.games) {
                 if (game !== undefined && game.status.abstractGameState == 'Final') {
                     let gameFeed = await getGameEvents(game.link)
-                    await addGame(game)
+                    await addGame(gameFeed)
                     await addVenue(gameFeed.gameData.venue, game.gamePk)
                     await addOfficials(game.gamePk, gameFeed.liveData.boxscore.officials);
                     await addPlayers(gameFeed)
                     await addEvents(gameFeed)
                     await addScoringEvents(gameFeed)
-                    await delay(gamesSchedule.wait * 1)
+                    // await delay(gamesSchedule.wait * 1)
                 }
             }
         }
@@ -436,4 +476,3 @@ var delay = (time) => {
     await driver.close()
     // console.log("foo")
 })();
-
