@@ -40,7 +40,7 @@ async function getSchedule(gameDate) {
 
 async function addGame(gameData) {
 
-    console.log(`Processing Game: ${gameData.gamePk} - ${gameData.gameData.teams.home.name} vs ${gameData.gameData.teams.away.name}`);
+    console.log(`Processing Game: ${gameData.gameData.datetime.dateTime} ${gameData.gamePk} - ${gameData.gameData.teams.home.name} (${gameData.liveData.boxscore.teams.home.teamStats.teamSkaterStats.goals}) vs ${gameData.gameData.teams.away.name} (${gameData.liveData.boxscore.teams.away.teamStats.teamSkaterStats.goals})`);
     // console.log(gameData.liveData.linescore.hasShootout)
     let overtime = false;
     // process.exit()
@@ -446,7 +446,7 @@ var delay = (time) => {
 (async () => {
     let a = [{ year: 'numeric' }, { month: 'numeric' }, { day: 'numeric' }];
     // var startDate = new Date(2023, 0, 12) // start of nhl season
-    var startDate = new Date(Date.parse("Jan 17, 2023"));
+    var startDate = new Date(Date.parse("Mar 08, 2023"));
     // process.exit()
     // var startDate = new Date(2023, 0, 7) // start of nhl season
     var endDate = new Date(); // Now
